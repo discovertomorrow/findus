@@ -1,0 +1,9 @@
+*.pyc
+.DS_Store
+/data/
+/credentials/
+/notebooks/
+/keys/
+/snippets/
+/plots/
+/*.egg-info
