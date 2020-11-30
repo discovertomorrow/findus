@@ -68,6 +68,10 @@ def get_array_from_product(path):
 
 
 class AOI:
+    """Area of Interest.
+
+    The class offers functionality to process Sentinel 2 data starting from a defined target region (area of interest).
+    """
     def __init__(self,
                  bounds,
                  name,
@@ -75,6 +79,23 @@ class AOI:
                  copernicus_credentials,
                  crs='EPSG:32632',
                  target_bands=None):
+        """Initializer.
+
+        Parameters
+        ----------
+        bounds: shapely.geometry.box
+            Box defining the target region.
+        name: str
+            Name of area of interest to be used to create a new AOI file structure.
+        base_directory: str
+            Directory to be used to create the new AOI file structure.
+        copernicus_credentials: findus.credentials.CopernicusCredentials
+            Credentials for Copernicus to access and download Sentinel 2 products.
+        crs: str
+            Coordinate system code to be used.
+        target_bands: List[str]
+            List of Sentinel 2 band specifications which should be used.
+        """
 
         self.target_bands = target_bands
         self.crs = crs
@@ -107,6 +128,7 @@ class AOI:
 
     @property
     def bounds(self):
+        """Get bounds of AOI."""
         return self.aoi.geometry[0]
 
     def request_data(self,
@@ -114,15 +136,25 @@ class AOI:
                      max_date,
                      platformname='Sentinel-2',
                      processinglevel='Level-2A'):
+        """Request Sentinel 2 product meta information."""
         self.available_products = self.hub.to_geodataframe(self.hub.query(self.original_bounds,
-                                                                          date=(
-                                                                              min_date, max_date),
+                                                                          date=(min_date, max_date),
                                                                           platformname=platformname,
                                                                           processinglevel=processinglevel))
 
-    def download_data(self,
-                      num_images=1):
+    def download_data(self, num_images=1):
+        """Download Sentinel 2 products.
 
+        Download the first num_images products (ordered by cloud cover percentage) of the 
+        available products (AOI.request_data call()). Note: Be aware that Sentinel 2 products
+        are quite large.
+
+        Parameters
+        ----------
+        num_images: int
+            Number of Sentinel 2 products to be downloaded.
+
+        """
         self.available_products = self.available_products.sort_values(by='cloudcoverpercentage')
 
         print('Start downloading data from Copernicus')
@@ -142,6 +174,15 @@ class AOI:
     def process_raw_product(self,
                             path,
                             import_bands=['B02', 'B03', 'B04', 'B08', 'B11', 'SCL']):
+        """Process downloaded, raw Sentinel 2 products.
+
+        Parameters
+        ----------
+        path: str
+            Path to product.
+        import_bands: List[str]
+            List which specified which Sentinel 2 bands should be imported.
+        """
 
         self.target_bands = [b for b in import_bands if b != 'SCL']
         product_name = re.search(r'Raw/(.*).SAFE', path).group(1)
@@ -172,12 +213,26 @@ class AOI:
 
     def start_raw_product_processing(self,
                                      import_bands=['B02', 'B03', 'B04', 'B08', 'B11', 'SCL']):
+        """Start processing of downloaded, raw products.
+
+        Parameters
+        ----------
+        import_bands: List[str]
+            List which specified which Sentinel 2 bands should be imported.
+        """
         print("Start processing of raw products.")
         for p in tqdm(os.listdir(self.raw_data_directory)):
             self.process_raw_product(path=os.path.join(
                 self.raw_data_directory, p), import_bands=import_bands)
 
     def combine_processed_products(self, combination_function=np.nanmean):
+        """Combine processed products to one image.
+
+        Parameters
+        ----------
+        combination_function: function
+            Function to be used to combine all pixels not covered by clouds.
+        """
         masked_imgs = {k: [] for k in self.target_bands}
 
         processed_products = os.listdir(self.processed_data_directory)
@@ -204,7 +259,8 @@ class AOI:
                 else:
                     if Sentinel2Specs.band_resolution[key][1] == 20:
                         item = zoom(item, zoom=2, order=0)
-                    masked_band = np.multiply(item, mask[:item.shape[0], :item.shape[1]])  # TODO Fix alignment
+                    # TODO Fix alignment: resampled bands mismatch 10m bands in shape.
+                    masked_band = np.multiply(item, mask[:item.shape[0], :item.shape[1]])  
                     masked_imgs[key].append(masked_band)
 
             # Combine images
@@ -217,6 +273,18 @@ class AOI:
                                    n_segments=500,
                                    compactness=15,
                                    band='B02'):
+        """Perform image segmentation.
+
+        Parameters
+        ----------
+        n_segments: int
+            Approximate number of segments to be supplied to skimage.segmentation.slic().
+        compactness: int
+            Compactness parameter supplied to skimage.segmentation.slic().
+        band
+            Band name of Sentinel 2 product to be used for segmentation.
+        """ 
+        
         # TODO extent for multi band segmentation
         image = self.combined_imgs[band]
         image[np.isnan(image)] = 0
